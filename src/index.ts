@@ -449,3 +449,164 @@ export function observe<T extends object>(data: T, fn: (data: T) => void): Mutat
   fn(root.makeProxy())
   return root.flush()
 }
+
+export type DeltaOp = 'SET' | 'APPEND' | 'TRUNCATE' | 'DELETE' | 'BATCH'
+
+export interface Delta {
+  p?: string
+  o?: DeltaOp
+  v?: any
+}
+
+function encodePath(path: PathSegment[]): string {
+  return path.join('/')
+}
+
+function decodePath(p: string): PathSegment[] {
+  if (!p) return []
+  const out: PathSegment[] = []
+  for (const part of p.split('/')) {
+    if (part === '') continue
+    out.push(isIndexKey(part) ? Number(part) : part)
+  }
+  return out
+}
+
+export class DeltaState {
+  private p = ''
+  private o: DeltaOp = 'SET'
+
+  load(delta: Delta): Mutation {
+    if (delta.o !== undefined) this.o = delta.o
+    if (delta.p !== undefined) this.p = delta.p
+    const path = decodePath(this.p)
+    const kind = this.loadKind(delta.v)
+    return { path, kind }
+  }
+
+  private loadKind(v: any): MutationKind {
+    switch (this.o) {
+      case 'SET':
+        return { type: 'replace', value: v }
+      case 'APPEND':
+        return { type: 'append', value: v }
+      case 'TRUNCATE':
+        if (typeof v !== 'number') throw new TypeError('muon: TRUNCATE delta requires numeric value')
+        return { type: 'truncate', count: v }
+      case 'DELETE':
+        return { type: 'delete' }
+      case 'BATCH': {
+        if (!Array.isArray(v)) throw new TypeError('muon: BATCH delta requires array value')
+        const inner = new DeltaState()
+        const items = v.map((d: Delta) => inner.load(d))
+        return { type: 'batch', items }
+      }
+    }
+  }
+
+  dump(mutation: Mutation): Delta {
+    const newP = encodePath(mutation.path)
+    let newO: DeltaOp
+    let v: any
+    let hasV = true
+    switch (mutation.kind.type) {
+      case 'replace':
+        newO = 'SET'
+        v = mutation.kind.value
+        break
+      case 'append':
+        newO = 'APPEND'
+        v = mutation.kind.value
+        break
+      case 'truncate':
+        newO = 'TRUNCATE'
+        v = mutation.kind.count
+        break
+      case 'delete':
+        newO = 'DELETE'
+        v = undefined
+        hasV = false
+        break
+      case 'batch': {
+        newO = 'BATCH'
+        const inner = new DeltaState()
+        v = mutation.kind.items.map((m) => inner.dump(m))
+        break
+      }
+    }
+    const delta: Delta = {}
+    if (this.p !== newP) {
+      this.p = newP
+      delta.p = newP
+    }
+    if (this.o !== newO) {
+      this.o = newO
+      delta.o = newO
+    }
+    if (hasV) delta.v = v
+    return delta
+  }
+}
+
+export function apply<T>(target: T, mutation: Mutation): T {
+  return applyAt(target, mutation, 0) as T
+}
+
+function applyAt(target: any, m: Mutation, depth: number): any {
+  if (depth === m.path.length) {
+    return applyKind(target, m.kind)
+  }
+  if (depth === m.path.length - 1 && m.kind.type === 'delete') {
+    const seg = m.path[depth]
+    if (isPlainObject(target) && typeof seg === 'string') {
+      delete (target as Record<string, any>)[seg]
+      return target
+    }
+    throw new TypeError('muon: delete requires an object parent at the final path segment')
+  }
+  const seg = m.path[depth]
+  if (Array.isArray(target) && typeof seg === 'number') {
+    target[seg] = applyAt(target[seg], m, depth + 1)
+    return target
+  }
+  if (isPlainObject(target) && typeof seg === 'string') {
+    target[seg] = applyAt(target[seg], m, depth + 1)
+    return target
+  }
+  throw new TypeError(`muon: cannot navigate path segment ${String(seg)} at depth ${depth}`)
+}
+
+function applyKind(value: any, kind: MutationKind): any {
+  switch (kind.type) {
+    case 'replace':
+      return kind.value
+    case 'append':
+      if (typeof value === 'string' && typeof kind.value === 'string') {
+        return value + kind.value
+      }
+      if (Array.isArray(value) && Array.isArray(kind.value)) {
+        value.push(...kind.value)
+        return value
+      }
+      throw new TypeError('muon: append requires matching string or array value')
+    case 'truncate':
+      if (typeof value === 'string') {
+        const n = Math.max(0, value.length - kind.count)
+        return value.slice(0, n)
+      }
+      if (Array.isArray(value)) {
+        value.length = Math.max(0, value.length - kind.count)
+        return value
+      }
+      throw new TypeError('muon: truncate requires a string or array target')
+    case 'delete':
+      throw new TypeError('muon: cannot apply delete at root')
+    case 'batch': {
+      let cur = value
+      for (const item of kind.items) {
+        cur = applyAt(cur, item, 0)
+      }
+      return cur
+    }
+  }
+}

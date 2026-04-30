@@ -19,6 +19,10 @@ package-lock.json
 tsconfig.tsbuildinfo
 report.*.json
 
+TODO.md
+CLAUDE.md
+
+.claude
 .eslintcache
 .DS_Store
 .idea
