@@ -1,0 +1,18 @@
+{
+  "extends": "../tsconfig",
+  "compilerOptions": {
+    "rootDir": ".",
+    "noEmit": true,
+    "types": [
+      "mocha",
+    ],
+  },
+  "references": [
+    {
+      "path": ".."
+    }
+  ],
+  "include": [
+    "."
+  ]
+}
