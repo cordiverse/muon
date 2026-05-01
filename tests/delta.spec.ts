@@ -15,7 +15,7 @@ describe('delta', () => {
     const a = state.dump({ path: ['foo'], kind: { type: 'replace', value: 1 } })
     const b = state.dump({ path: ['foo'], kind: { type: 'replace', value: 2 } })
     // SET is the default op, so it's omitted on the first dump
-    expect(a).to.deep.equal({ p: 'foo', v: 1 })
+    expect(a).to.deep.equal({ p: ['foo'], v: 1 })
     expect(b).to.deep.equal({ v: 2 })
   })
 
@@ -23,7 +23,7 @@ describe('delta', () => {
     const state = new DeltaState()
     state.dump({ path: ['foo'], kind: { type: 'replace', value: 1 } })
     const b = state.dump({ path: ['bar'], kind: { type: 'replace', value: 2 } })
-    expect(b).to.deep.equal({ p: 'bar', v: 2 })
+    expect(b).to.deep.equal({ p: ['bar'], v: 2 })
   })
 
   it('emits new op when only op changes', () => {
@@ -33,13 +33,25 @@ describe('delta', () => {
     expect(b).to.deep.equal({ o: 'APPEND', v: 'b' })
   })
 
-  it('encodes numeric path segments', () => {
+  it('keeps numeric path segments as numbers', () => {
     const state = new DeltaState()
     const d = state.dump({
       path: ['arr', 2, 'x'],
       kind: { type: 'replace', value: 9 },
     })
-    expect(d.p).to.equal('arr/2/x')
+    expect(d.p).to.deep.equal(['arr', 2, 'x'])
+  })
+
+  it('keeps path segments containing slashes intact', () => {
+    const send = new DeltaState()
+    const recv = new DeltaState()
+    const m: Mutation = {
+      path: ['routes', 'GET {/*path}'],
+      kind: { type: 'replace', value: { id: 'GET {/*path}' } },
+    }
+    const d = send.dump(m)
+    expect(d.p).to.deep.equal(['routes', 'GET {/*path}'])
+    expect(recv.load(d)).to.deep.equal(m)
   })
 
   it('roundtrips replace/append/truncate/delete', () => {
@@ -79,7 +91,7 @@ describe('delta', () => {
   it('delete delta carries no v field', () => {
     const send = new DeltaState()
     const d = send.dump({ path: ['k'], kind: { type: 'delete' } })
-    expect(d).to.deep.equal({ p: 'k', o: 'DELETE' })
+    expect(d).to.deep.equal({ p: ['k'], o: 'DELETE' })
     expect('v' in d).to.equal(false)
   })
 
@@ -106,7 +118,44 @@ describe('delta', () => {
 
   it('decodes empty path correctly', () => {
     const recv = new DeltaState()
-    const m = recv.load({ p: '', o: 'SET', v: { a: 1 } } satisfies Delta)
+    const m = recv.load({ p: [], o: 'SET', v: { a: 1 } } satisfies Delta)
     expect(m).to.deep.equal({ path: [], kind: { type: 'replace', value: { a: 1 } } })
+  })
+
+  it('snapshot/restore lets a late receiver stay in sync', () => {
+    const send = new DeltaState()
+    // warm up sender cursor
+    send.dump({ path: ['foo'], kind: { type: 'append', value: 'a' } })
+    send.dump({ path: ['foo'], kind: { type: 'append', value: 'b' } })
+
+    // new client joins: server ships snapshot + current value
+    const recv = new DeltaState()
+    recv.restore(send.snapshot())
+
+    const d = send.dump({ path: ['foo'], kind: { type: 'append', value: 'c' } })
+    expect(recv.load(d)).to.deep.equal({
+      path: ['foo'],
+      kind: { type: 'append', value: 'c' },
+    })
+  })
+
+  it('snapshot returns default state for a fresh DeltaState', () => {
+    const s = new DeltaState()
+    expect(s.snapshot()).to.deep.equal({ p: [], o: 'SET' })
+  })
+
+  it('restore is idempotent and survives mixed ops', () => {
+    const send = new DeltaState()
+    send.dump({ path: ['a'], kind: { type: 'replace', value: 1 } })
+    send.dump({ path: ['b'], kind: { type: 'append', value: [1] } })
+    send.dump({ path: ['c'], kind: { type: 'truncate', count: 2 } })
+
+    const recv = new DeltaState()
+    recv.restore(send.snapshot())
+    const d = send.dump({ path: ['c'], kind: { type: 'truncate', count: 1 } })
+    expect(recv.load(d)).to.deep.equal({
+      path: ['c'],
+      kind: { type: 'truncate', count: 1 },
+    })
   })
 })

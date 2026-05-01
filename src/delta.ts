@@ -1,37 +1,39 @@
-import { isIndexKey, Mutation, MutationKind, PathSegment } from './common'
+import { Mutation, MutationKind, PathSegment } from './common'
 
 export type DeltaOp = 'SET' | 'APPEND' | 'TRUNCATE' | 'DELETE' | 'BATCH'
 
 export interface Delta {
-  p?: string
+  p?: PathSegment[]
   o?: DeltaOp
   v?: any
 }
 
-function encodePath(path: PathSegment[]): string {
-  return path.join('/')
-}
-
-function decodePath(p: string): PathSegment[] {
-  if (!p) return []
-  const out: PathSegment[] = []
-  for (const part of p.split('/')) {
-    if (part === '') continue
-    out.push(isIndexKey(part) ? Number(part) : part)
+function pathsEqual(a: PathSegment[], b: PathSegment[]): boolean {
+  if (a.length !== b.length) return false
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false
   }
-  return out
+  return true
 }
 
 export class DeltaState {
-  private p = ''
+  private p: PathSegment[] = []
   private o: DeltaOp = 'SET'
+
+  snapshot(): { p: PathSegment[]; o: DeltaOp } {
+    return { p: [...this.p], o: this.o }
+  }
+
+  restore(state: { p: PathSegment[]; o: DeltaOp }): void {
+    this.p = [...state.p]
+    this.o = state.o
+  }
 
   load(delta: Delta): Mutation {
     if (delta.o !== undefined) this.o = delta.o
-    if (delta.p !== undefined) this.p = delta.p
-    const path = decodePath(this.p)
+    if (delta.p !== undefined) this.p = [...delta.p]
     const kind = this.loadKind(delta.v)
-    return { path, kind }
+    return { path: [...this.p], kind }
   }
 
   private loadKind(v: any): MutationKind {
@@ -55,7 +57,7 @@ export class DeltaState {
   }
 
   dump(mutation: Mutation): Delta {
-    const newP = encodePath(mutation.path)
+    const newP = mutation.path
     let newO: DeltaOp
     let v: any
     let hasV = true
@@ -85,9 +87,9 @@ export class DeltaState {
       }
     }
     const delta: Delta = {}
-    if (this.p !== newP) {
-      this.p = newP
-      delta.p = newP
+    if (!pathsEqual(this.p, newP)) {
+      this.p = [...newP]
+      delta.p = [...newP]
     }
     if (this.o !== newO) {
       this.o = newO
