@@ -1,7 +1,7 @@
 {
   "name": "@cordisjs/muon",
   "description": "Observe and serialize mutations on plain JavaScript values",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "main": "lib/index.js",
   "typings": "lib/index.d.ts",
@@ -10,9 +10,21 @@
   ],
   "author": "Shigma <shigma10826@gmail.com>",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cordiverse/muon.git"
+  },
+  "bugs": {
+    "url": "https://github.com/cordiverse/muon/issues"
+  },
+  "homepage": "https://github.com/cordiverse/muon",
+  "scripts": {
+    "build": "tsc -b"
+  },
   "devDependencies": {
     "@types/chai": "^4.3.16",
     "@types/node": "^25.3.5",
-    "chai": "^5.1.1"
+    "chai": "^5.1.1",
+    "typescript": "^6.0.3"
   }
 }
