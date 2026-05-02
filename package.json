@@ -1,7 +1,7 @@
 {
   "name": "@cordisjs/muon",
   "description": "Observe and serialize mutations on plain JavaScript values",
-  "version": "0.2.0",
+  "version": "0.2.2",
   "type": "module",
   "main": "lib/index.js",
   "typings": "lib/index.d.ts",
@@ -19,12 +19,17 @@
   },
   "homepage": "https://github.com/cordiverse/muon",
   "scripts": {
-    "build": "tsc -b"
+    "build": "tsc -b && dumble"
+  },
+  "dependencies": {
+    "cosmokit": "^1.8.1"
   },
   "devDependencies": {
     "@types/chai": "^4.3.16",
     "@types/node": "^25.3.5",
     "chai": "^5.1.1",
+    "dumble": "^0.2.3",
+    "esbuild": "^0.28.0",
     "typescript": "^6.0.3"
   }
 }

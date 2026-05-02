@@ -5,6 +5,7 @@
     "target": "esnext",
     "module": "preserve",
     "declaration": true,
+    "emitDeclarationOnly": true,
     "composite": true,
     "incremental": true,
     "skipLibCheck": true,

@@ -20,6 +20,7 @@ export function observe<T extends object>(data: T, fn: (data: T) => void): Mutat
 export * from './apply'
 export * from './array'
 export * from './base'
+export * from './batch'
 export * from './common'
 export * from './delta'
 export * from './object'
